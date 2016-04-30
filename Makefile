@@ -50,7 +50,7 @@ GO_STDLIB := archive archive/tar archive/zip bufio builtin bytes compress \
 ##                               PROJECT INFO                                 ##
 ################################################################################
 
-GO_LIST_BUILD_INFO_CMD := go list -tags '$(GO_TAGS)' -f '{{with $$ip:=.}}{{with $$ctx:=context}}{{printf "%s %s %s %s %s 0,%s" $$ip.ImportPath $$ip.Name $$ip.Dir $$ctx.GOOS $$ctx.GOARCH (join $$ctx.BuildTags ",")}}{{end}}{{end}}'
+GO_LIST_BUILD_INFO_CMD := go list -f '{{with $$ip:=.}}{{with $$ctx:=context}}{{printf "%s %s %s %s %s 0,%s" $$ip.ImportPath $$ip.Name $$ip.Dir $$ctx.GOOS $$ctx.GOARCH (join $$ctx.BuildTags ",")}}{{end}}{{end}}'
 BUILD_INFO := $(shell $(GO_LIST_BUILD_INFO_CMD))
 ROOT_IMPORT_PATH := $(word 1,$(BUILD_INFO))
 ROOT_IMPORT_NAME := $(word 2,$(BUILD_INFO))
@@ -109,6 +109,12 @@ EXT_DEPS_$1 := $$(filter-out $$(ROOT_IMPORT_PATH)%,$$(DEPS_$1))
 EXT_DEPS_$1 += $$(EXT_VENDORED_DEPS_$1)
 EXT_DEPS += $$(EXT_DEPS_$1)
 EXT_DEPS_SRCS_$1 := $$(addprefix $$(GOPATH)/src/,$$(addsuffix /*.go,$$(EXT_DEPS_$1)))
+ifneq (,$$(filter $$(GOPATH)/src/C/%,$$(EXT_DEPS_SRCS_$1)))
+EXT_DEPS_SRCS_$1 := $$(filter-out $$(GOPATH)/src/C/%,$$(EXT_DEPS_SRCS_$1))
+ifeq (main,$$(NAME_$1))
+C_$1 := 1
+endif
+endif
 EXT_DEPS_SRCS += $$(EXT_DEPS_SRCS_$1)
 
 DEPS_ARKS_$1 := $$(addprefix $$(GOPATH)/pkg/$$(GOOS)_$$(GOARCH)/,$$(addsuffix .a,$$(INT_DEPS_$1)))
@@ -140,9 +146,17 @@ TEST_EXT_VENDORED_DEPS_$1 := $$(filter $$(ROOT_IMPORT_PATH)/vendor/%,$$(TEST_DEP
 TEST_EXT_VENDORED_DEPS_$1 := $$(subst $$(ROOT_IMPORT_PATH)/vendor/,,$$(TEST_EXT_VENDORED_DEPS_$1))
 TEST_EXT_VENDORED_DEPS_$1 := $$(filter-out $$(ROOT_IMPORT_PATH)%,$$(TEST_EXT_VENDORED_DEPS_$1))
 TEST_EXT_DEPS_$1 := $$(filter-out $$(ROOT_IMPORT_PATH)%,$$(TEST_DEPS_$1))
+TEST_EXT_DEPS_$1 := $$(filter-out $$(GOPATH)/src/C/%,$$(TEST_EXT_DEPS_$1))
 TEST_EXT_DEPS_$1 += $$(TEST_EXT_VENDORED_DEPS_$1)
 TEST_EXT_DEPS += $$(TEST_EXT_DEPS_$1)
 TEST_EXT_DEPS_SRCS_$1 := $$(addprefix $$(GOPATH)/src/,$$(addsuffix /*.go,$$(TEST_EXT_DEPS_$1)))
+ifneq (,$$(filter $$(GOPATH)/src/C/%,$$(TEST_EXT_DEPS_SRCS_$1)))
+TEST_EXT_DEPS_SRCS_$1 := $$(filter-out $$(GOPATH)/src/C/%,$$(TEST_EXT_DEPS_SRCS_$1))
+ifeq (main,$$(NAME_$1))
+TEST_C_$1 := 1
+endif
+endif
+
 TEST_EXT_DEPS_SRCS += $$(TEST_EXT_DEPS_SRCS_$1)
 
 TEST_DEPS_ARKS_$1 := $$(addprefix $$(GOPATH)/pkg/$$(GOOS)_$$(GOARCH)/,$$(addsuffix .a,$$(TEST_INT_DEPS_$1)))
@@ -222,6 +236,7 @@ endif
 define IMPORT_PATH_BUILD_DEF
 
 ifneq (,$$(strip $$(SRCS_$1)))
+ifneq (1,$$(C_$1))
 
 DEPS_SRCS_$1 := $$(foreach d,$$(INT_DEPS_$1),$$(SRCS_.$$(subst $$(ROOT_IMPORT_PATH),,$$(d))))
 
@@ -248,11 +263,13 @@ GO_BUILD += $$(PKG_A_$1)
 GO_CLEAN += $$(PKG_A_$1)-clean
 
 endif
+endif
 
 ################################################################################
 ##                               PROJECT TESTS                                ##
 ################################################################################
 ifneq (,$$(strip $$(TEST_SRCS_$1)))
+ifneq (1,$$(TEST_C_$1))
 
 TEST_DEPS_SRCS_$1 := $$(foreach d,$$(TEST_INT_DEPS_$1),$$(SRCS_.$$(subst $$(ROOT_IMPORT_PATH),,$$(d))))
 
@@ -290,6 +307,7 @@ GO_TEST += $$(PKG_TC_$1)
 GO_BUILD_TESTS += $$(PKG_TA_$1)
 GO_CLEAN += $$(PKG_TC_$1)-clean
 
+endif
 endif
 
 endef
@@ -397,9 +415,6 @@ GO_PHONY += codecov
 C_LIBSTOR_DIR := ./c
 C_LIBSTOR_C_DIR := $(C_LIBSTOR_DIR)/libstor-c
 C_LIBSTOR_C_SO := $(GOPATH)/pkg/$(GOOS)_$(GOARCH)/github.com/emccode/libstorage/c/libstor-c.so
-C_LIBSTOR_C_SO_SRCS :=  $(wildcard $(C_LIBSTOR_C_DIR)/*.go) \
-						$(wildcard $(C_LIBSTOR_C_DIR)/*.h) \
-						$(wildcard $(C_LIBSTOR_C_DIR)/*.c)
 C_LIBSTOR_C_BIN := $(GOPATH)/bin/libstor-c
 C_LIBSTOR_C_BIN_SRC := $(C_LIBSTOR_DIR)/libstor-c.c
 C_LIBSTOR_C_GO_DEPS :=	$(GOPATH)/pkg/$(GOOS)_$(GOARCH)/github.com/emccode/libstorage/api/types.a \
@@ -407,8 +422,8 @@ C_LIBSTOR_C_GO_DEPS :=	$(GOPATH)/pkg/$(GOOS)_$(GOARCH)/github.com/emccode/libsto
 
 libstor-c: $(C_LIBSTOR_C_SO) $(C_LIBSTOR_C_BIN)
 
-$(C_LIBSTOR_C_SO):  $(C_LIBSTOR_C_SO_SRCS) \
-					$(C_LIBSTOR_C_GO_DEPS)
+$(C_LIBSTOR_C_SO):  $(EXT_DEPS_SRCS_./c/libstor-c) \
+					$(SRCS_./c/libstor-c) | $(DEPS_ARKS_./c/libstor-c)
 	go build -buildmode=c-shared -o $@ $(C_LIBSTOR_C_DIR)
 
 $(C_LIBSTOR_C_SO)-clean:
@@ -416,9 +431,9 @@ $(C_LIBSTOR_C_SO)-clean:
 GO_PHONY += $(C_LIBSTOR_C_SO)-clean
 GO_CLEAN += $(C_LIBSTOR_C_SO)-clean
 
-$(C_LIBSTOR_C_BIN): $(C_LIBSTOR_C_BIN_SRC) \
-					$(C_LIBSTOR_C_SO) \
-					$(C_LIBSTOR_C_GO_DEPS)
+$(C_LIBSTOR_C_BIN):  $(C_LIBSTOR_C_BIN_SRC) \
+				 	 $(C_LIBSTOR_C_SO) \
+					 $(C_LIBSTOR_C_GO_DEPS)
 	gcc -I$(abspath $(C_LIBSTOR_C_DIR)) \
 		-I$(dir $(C_LIBSTOR_C_SO)) \
 		-L$(dir $(C_LIBSTOR_C_SO)) \
@@ -426,26 +441,19 @@ $(C_LIBSTOR_C_BIN): $(C_LIBSTOR_C_BIN_SRC) \
 		$(C_LIBSTOR_C_BIN_SRC) \
 		-lstor-c
 
-$(C_LIBSTOR_C_BIN)-clean:
-	rm -f $(C_LIBSTOR_C_BIN)
-GO_PHONY += $(C_LIBSTOR_C_BIN)-clean
-GO_CLEAN += $(C_LIBSTOR_C_BIN)-clean
-
-
 ################################################################################
 ##                                  C SERVER                                  ##
 ################################################################################
 C_LIBSTOR_S_DIR := $(C_LIBSTOR_DIR)/libstor-s
 C_LIBSTOR_S_SO := $(GOPATH)/pkg/$(GOOS)_$(GOARCH)/github.com/emccode/libstorage/c/libstor-s.so
-C_LIBSTOR_S_SO_SRCS := $(wildcard $(C_LIBSTOR_S_DIR)/*.go)
 C_LIBSTOR_S_BIN := $(GOPATH)/bin/libstor-s
 C_LIBSTOR_S_BIN_SRC := $(C_LIBSTOR_DIR)/libstor-s.c
 C_LIBSTOR_S_GO_DEPS := $(GOPATH)/pkg/$(GOOS)_$(GOARCH)/github.com/emccode/libstorage/cli/servers.a
 
 libstor-s: $(C_LIBSTOR_S_BIN) $(C_LIBSTOR_S_SO)
 
-$(C_LIBSTOR_S_SO):	$(C_LIBSTOR_TYPES_H) \
-					$(C_LIBSTOR_S_SO_SRCS)
+$(C_LIBSTOR_S_SO):  $(EXT_DEPS_SRCS_./c/libstor-s) \
+					$(SRCS_./c/libstor-s) | $(DEPS_ARKS_./c/libstor-s)
 	go build -buildmode=c-shared -o $@ $(C_LIBSTOR_S_DIR)
 
 $(C_LIBSTOR_S_SO)-clean:
@@ -453,21 +461,16 @@ $(C_LIBSTOR_S_SO)-clean:
 GO_PHONY += $(C_LIBSTOR_S_SO)-clean
 GO_CLEAN += $(C_LIBSTOR_S_SO)-clean
 
-$(C_LIBSTOR_S_BIN): $(C_LIBSTOR_TYPES_H) \
-					$(C_LIBSTOR_S_BIN_SRC) \
-					$(C_LIBSTOR_S_SO) \
-					$(C_LIBSTOR_S_GO_DEPS)
+$(C_LIBSTOR_S_BIN):  $(C_LIBSTOR_TYPES_H) \
+					 $(C_LIBSTOR_S_BIN_SRC) \
+					 $(C_LIBSTOR_S_SO) \
+					 $(C_LIBSTOR_S_GO_DEPS)
 	gcc -I$(abspath $(C_LIBSTOR_DIR)) \
 		-I$(dir $(C_LIBSTOR_S_SO)) \
 		-L$(dir $(C_LIBSTOR_S_SO)) \
 		-o $@ \
 		$(C_LIBSTOR_S_BIN_SRC) \
 		-lstor-s
-
-$(C_LIBSTOR_S_BIN)-clean:
-	rm -f $(C_LIBSTOR_S_BIN)
-GO_PHONY += $(C_LIBSTOR_S_BIN)-clean
-GO_CLEAN += $(C_LIBSTOR_S_BIN)-clean
 
 ################################################################################
 ##                                  TARGETS                                   ##

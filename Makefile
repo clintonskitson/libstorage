@@ -211,7 +211,7 @@ ifneq (,$(GLIDE_YAML))
 $(ALL_EXT_DEPS_SRCS): $(GLIDE_LOCK)
 
 $(GLIDE_LOCK): $(GLIDE_YAML)
-	glide up
+#	glide up
 
 $(GLIDE_LOCK)-clean:
 	rm -f $(GLIDE_LOCK)

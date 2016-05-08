@@ -88,7 +88,7 @@ func (d *driver) List(
 	vols, err := ctx.Client().Storage().Volumes(
 		ctx,
 		&types.VolumesOpts{
-			Attachments: false,
+			Attachments: opts.GetBool("attachments"),
 			Opts:        opts,
 		},
 	)

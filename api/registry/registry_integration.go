@@ -6,7 +6,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/akutz/gofig"
 
+	"github.com/emccode/libstorage/api/context"
 	"github.com/emccode/libstorage/api/types"
+	apiutils "github.com/emccode/libstorage/api/utils"
 )
 
 type idm struct {
@@ -36,8 +38,14 @@ func (d *idm) Init(ctx types.Context, config gofig.Config) error {
 	d.ctx = ctx
 	d.used = map[string]int{}
 
+	if d.pathCache() {
+		store := apiutils.NewStore()
+		store.Set("attachments", true)
+		_, _ = d.List(context.Background(), store)
+	}
+
 	ctx.WithField(types.ConfigIntegrationVolPathCache,
-		d.pathCache()).Info("empty path for unused volume setting")
+		d.pathCache()).Info("cache empty path for unused volume setting")
 	ctx.WithField(types.ConfigIntegrationVolUnmountIgnoreUsed,
 		d.ignoreUsedCount()).Info("ignore used count on unmount setting")
 	ctx.WithField(types.ConfigIntegrationVolMountPreempt,
